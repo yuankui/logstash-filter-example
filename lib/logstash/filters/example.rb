@@ -7,37 +7,47 @@ require "logstash/namespace"
 #
 # It is only intended to be used as an example.
 class LogStash::Filters::Example < LogStash::Filters::Base
-
-  # Setting the config_name here is required. This is how you
-  # configure this filter from your Logstash config.
-  #
-  # filter {
-  #   example {
-  #     message => "My message..."
-  #   }
-  # }
-  #
   config_name "example"
-  
-  # Replace the message with this value.
-  config :message, :validate => :string, :default => "Hello World!"
-  
 
-  public
+  config :key_regex, :validate => :string, :required => true
+
+  config :key_regex_fields, :validate => :array, :required => true
+
   def register
-    # Add instance variables 
-  end # def register
+    @key_regex = Regexp.new(@key_regex)
 
-  public
+    if not @key_regex_fields.one? { |x| x == ''}
+      raise 'key_regex_fields should contain one nil element'
+    end
+  end
+
   def filter(event)
+    metrics = []
+    event.to_hash.each_pair do |k, v|
+      elements = @key_regex.match(k)
+      next if elements == nil
 
-    if @message
-      # Replace the event message with our message as configured in the
-      # config file.
-      event["message"] = @message
+      # remove the first: the whole string
+      elements = elements.to_a
+      elements.slice!(0)
+      next if elements.size != @key_regex_fields.size
+
+      data_map = {}
+      @key_regex_fields.each_with_index do
+        |x,i|
+        e = elements[i]
+        if x == ''
+          field_name = e
+          data_map[field_name] = v
+        else
+          field_name = @key_regex_fields[i]
+          data_map[field_name] = e
+        end
+      end
+      metrics.push data_map
     end
 
-    # filter_matched should go in the last line of our successful code
-    filter_matched(event)
-  end # def filter
+    event['metrics'] = metrics
+
+  end
 end # class LogStash::Filters::Example
